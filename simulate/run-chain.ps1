@@ -16,7 +16,7 @@
 # ============================================================================
 
 # --- CONFIG: point this at the raw URL of stage2.ps1 in this repo -----------
-$Stage2Url = "https://raw.githubusercontent.com/socfortress1/CoPilot-Demo-Lab/main/simulate/stage2.ps1"
+$Stage2Url = "https://raw.githubusercontent.com/taylorwalton/CoPilot-Demo-Lab/main/simulate/stage2.ps1"
 $Stage2Local = "C:\Users\Public\stage2.ps1"
 # ----------------------------------------------------------------------------
 

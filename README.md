@@ -38,10 +38,10 @@ your lab, exclude `C:\Users\Public` first.
 
 ```powershell
 # option A — one shot
-irm https://raw.githubusercontent.com/socfortress1/CoPilot-Demo-Lab/main/simulate/run-chain.ps1 | iex
+irm https://raw.githubusercontent.com/taylorwalton/CoPilot-Demo-Lab/main/simulate/run-chain.ps1 | iex
 
 # option B — clone and run
-git clone https://github.com/socfortress1/CoPilot-Demo-Lab
+git clone https://github.com/taylorwalton/CoPilot-Demo-Lab
 cd CoPilot-Demo-Lab\simulate
 .\run-chain.ps1
 ```
