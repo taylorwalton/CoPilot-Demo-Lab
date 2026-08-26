@@ -1,0 +1,104 @@
+key: sysmon-certutil-download-cradle-chain
+name: "Sysmon Scenario — Download Cradle → Execute → Drop & Persist"
+description: >
+  Investigation playbook for a download-cradle intrusion: a signed Windows LOLBin
+  (certutil) downloads a second-stage script, PowerShell executes it, and the
+  second stage drops a masqueraded binary into a user-writable path and sets a
+  Run-key for persistence. Anchored on the Sysmon EID 1 alert for the certutil
+  download command line. Walks the analyst from the download alert, through the
+  raw events, out to live Velociraptor collection to discover what the download
+  actually did, and into containment and close-out.
+source: wazuh
+match:
+  field: data_win_system_eventID
+  value: "1"
+tags:
+  sysmon_event_id: 1
+  mitre_tactics:
+    - command-and-control
+    - execution
+    - defense-evasion
+    - persistence
+tasks:
+  - title: "Confirm the download cradle in the command line"
+    mandatory: true
+    order_index: 0
+    guidelines: |
+      Start on the anchoring alert. Look at `Image` and `CommandLine`. The tell is
+      a trusted binary pulling a file off the web:
+      - `certutil.exe -urlcache -split -f <url>` — no legitimate admin use
+      - or `powershell.exe` with `Net.WebClient`, `DownloadFile`, `Invoke-WebRequest`
+      - or `bitsadmin /transfer`
+      Note the URL and the local path the file was written to (expect a
+      user-writable folder like `C:\Users\Public`).
+  - title: "Corroborate with DNS, network, and file-create events"
+    mandatory: true
+    order_index: 1
+    guidelines: |
+      Pivot to the related Sysmon events on the same host and window:
+      - EID 22 (DNS) — the resolution of the download host
+      - EID 3 (network) — the outbound connection from the LOLBin
+      - EID 11 (file create) — the second stage landing on disk
+      A signed cert/OS utility doing DNS + network + file-write in the same two
+      seconds is the behavioral signature. One event is thin; the cluster is the case.
+  - title: "Confirm the second stage executed"
+    mandatory: true
+    order_index: 2
+    guidelines: |
+      Look for the follow-on EID 1: `powershell.exe -ExecutionPolicy Bypass -File`
+      against the file that was just downloaded. Download immediately followed by
+      execute-with-bypass, same user, seconds apart, is the other half of the cradle.
+      If script-block logging (4104) is on, pull the decoded contents to see exactly
+      what the second stage did.
+  - title: "Discover what the download dropped (Velociraptor)"
+    mandatory: true
+    order_index: 3
+    guidelines: |
+      The alert only knows about the downloaded file. Go find everything the second
+      stage put on disk. Run `Windows.Search.FileFinder` against the drop folder for
+      files created in the last 15 minutes. Expect additional artifacts the SIEM
+      never alerted on (a masqueraded exe, a staged data file). This is the step that
+      turns "a download happened" into "here is the full blast radius."
+  - title: "Unmask the dropped binary (Velociraptor live PowerShell)"
+    mandatory: true
+    order_index: 4
+    guidelines: |
+      Run a `Windows.System.PowerShell` collection to hash and signature-check the
+      dropped executable:
+        Get-FileHash <path> -Algorithm SHA256
+        Get-AuthenticodeSignature <path> | Select Status, SignerCertificate
+      Watch for masquerading: a signed binary sitting in a user-writable path under a
+      system-service name is signed but not what it claims to be. Check the hash
+      against VirusTotal for anything not legitimately signed.
+  - title: "Confirm execution history"
+    mandatory: false
+    order_index: 5
+    guidelines: |
+      Collect `Windows.Forensics.Prefetch` and `Windows.System.Amcache` to confirm
+      whether the downloaded/dropped binaries actually ran and when. Downloaded-but-
+      -never-run and downloaded-and-executed are different severities — get evidence.
+  - title: "Hunt persistence (Velociraptor)"
+    mandatory: true
+    order_index: 6
+    guidelines: |
+      Check the persistence locations for anything pointing at the dropped binary:
+        Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+        Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run'
+      or the `Windows.Persistence.*` / autoruns artifacts. A Run-key value pointing at
+      a user-folder binary means it relaunches at every logon. Containment must remove
+      the persistence, not just delete the file.
+  - title: "Scope the tenant"
+    mandatory: false
+    order_index: 7
+    guidelines: |
+      Run the same pattern across every endpoint for the customer via CoPilot Searches
+      (filter by the download-cradle technique). If a second host hits, link it into
+      this case rather than chasing it inline.
+  - title: "Contain, document, and close"
+    mandatory: true
+    order_index: 8
+    guidelines: |
+      Contain via a CoPilot Action (kill process, remove the Run key, delete the
+      dropped binary, block the download host). Upload the FileFinder output, the
+      hash/signature result, and the persistence listing to the case Data Store.
+      Write the conclusion in Comments. Set severity, generate the report, close.
